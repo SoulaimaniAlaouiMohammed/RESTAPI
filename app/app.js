@@ -7,6 +7,7 @@ const {
     saveUser,
     updateUser
  } = require('./persistance.js')
+const { sendResponse, handleError } = require('./Utils.js')
 
 
 
@@ -17,45 +18,29 @@ const server = http.createServer((req, res) => {
     if (url.toLowerCase() === '/users' && method === 'GET')
     {
         getAllUsers()
-        .then(result => res.write(JSON.stringify(result, null, 3)))
-        .catch(e => console.error(e))
-        .finally(() => res.end())
+        .then(result => sendResponse(res, 200, result))
+        .catch(e => handleError(res, e, msg))
     }
     else if (url.toLowerCase().startsWith('/users/') && method === 'GET')
     {
         const id = url.split('/')[2]
 
         getUserById(id)
-        .then(result => result == null ? res.write(`User with id ${id} not exist.`) : res.write(JSON.stringify(result, null, 3)))
-        // .then(result => {
-        //     if (result == null) res.write(`User with id ${id} not exist.`)
-        //     else {
-        //         res.write(JSON.stringify(result, null, 3))
-        //     }
-        // })
-        .catch(e => console.error(e))
-        .finally(() => res.end())
+        .then(result => result == null ? sendResponse(res, 404, `User with id ${id} not exist.`) 
+        : sendResponse(res, 200, result))
+        .catch(e => handleError(res, e, msg))
     }
     else if (url.toLowerCase() == '/users' && method === 'POST')
     {
         let body = ""
-
-        req.on("data", (chunk) => {
-            body += chunk.toString()
-        })
+        req.on("data", (chunk) => (body += chunk.toString()))
 
         req.on("end", () => {
             const userData = JSON.parse(body)
             saveUser(userData)
-            .then(async result => {
-                if (!result) res.write('User not added, please try again.')
-                else {
-                    await getAllUsers()
-                    .then(r => res.write(JSON.stringify(r, null, 3)))
-                }
-            })
-            .catch(e => console.error(e))
-            .finally(() => res.end())
+            .then(async result => !result ? sendResponse(res, 404, `User not added with success, please try again.`) 
+            : await getAllUsers().then(data => sendResponse(res, 200, data)))
+            .catch(e => handleError(res, e, msg))
         })
     }
     else if (url.toLowerCase().startsWith('/users/') && method === 'DELETE')
@@ -63,55 +48,32 @@ const server = http.createServer((req, res) => {
         const id = url.split('/')[2]
 
         deleteUserById(id)
-        .then(async result => {
-            if (!result) {
-                res.write(`User with id ${id} not deleted with success.`)
-                res.end()
-            }
-            else {
-                await getAllUsers()
-                .then(result => res.write(JSON.stringify(result, null, 3)))
-                .catch(e => console.error(e))
-                .finally(() => res.end())
-            }
-        })
+        .then(async result => !result ? sendResponse(res, 404, `User with id ${id} not exist.`)
+        : await getAllUsers().then(data => sendResponse(res, 200, data)))
+        .catch(e => handleError(res, e, msg))
     }
     else if (url.toLowerCase().startsWith('/users/') && method === 'PUT')
     {
         const id = url.split('/')[2]
 
         let body = ""
-
-        req.on("data", (chunk) => {
-            body += chunk.toString()
-        })
+        req.on("data", (chunk) => (body += chunk.toString()))
 
         req.on("end", () => {
             const newData = JSON.parse(body)
 
             updateUser(id, newData)
-            .then(result => {
-                if (!result) {
-                    res.write(`User with id ${id} exist.`)
-                    res.end()
-                }
-                else {
-                    getUserById(id)
-                    .then(data => res.write(JSON.stringify(data, null, 3)))
-                    .catch(e => console.error(e))
-                    .finally(() => res.end())
-                }
-            })
+            .then(result => !result ? sendResponse(res, 404, `User with id ${id} not exist.`)
+            : getUserById(id).then(data => sendResponse(res, 200, data)))
+            .catch(e => handleError(res, e, msg))
         })
     }
     else
     {
         try {
-            res.write('Error 404.')
+            sendResponse(res, 404, `Error 404. Page not found.`)
         } catch (e) {
-            console.error(e)
-        } finally {
-            res.end()
+            handleError(res, e, msg)
         }
     }
 
